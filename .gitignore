@@ -1,24 +1,49 @@
-# Compiled class file
-*.class
+opsucht-permission/
+├── api/               # enthält nur die Interfaces (z. B. PermissionProvider)
+│   └── pom.xml
+├── bukkit/            # Bukkit-Implementierung (für z. B. LuckPerms, PEX, GM)
+│   └── pom.xml
+├── pom.xml            # Parent POM
+<dependencies>
+    <dependency>
+        <groupId>org.jetbrains</groupId>
+        <artifactId>annotations</artifactId>
+        <version>23.0.0</version>
+    </dependency>
+</dependencies>
+public class LuckPermsProvider implements PermissionProvider {
+    @Override
+    public @NotNull String getProviderName() {
+        return "LuckPerms";
+    }
 
-# Log file
-*.log
+    // Implementiere alle Methoden mit LuckPerms API Calls
+}
+<modules>
+    <module>api</module>
+    <module>bukkit</module>
+</modules>
+feat(api): add PermissionProvider interface
+chore: setup multi-module Maven project
+name: Deploy API to Maven
 
-# BlueJ files
-*.ctxt
+on:
+  push:
+    branches: [ main ]
 
-# Mobile Tools for Java (J2ME)
-.mtj.tmp/
-
-# Package Files #
-*.jar
-*.war
-*.nar
-*.ear
-*.zip
-*.tar.gz
-*.rar
-
-# virtual machine crash logs, see http://www.java.com/en/download/help/error_hotspot.xml
-hs_err_pid*
-replay_pid*
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Set up Java
+        uses: actions/setup-java@v3
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+      - name: Build & Deploy
+        run: mvn clean deploy --settings .github/settings.xml
+        env:
+          GPG_KEY: ${{ secrets.GPG_KEY }}
+          MAVEN_USERNAME: ${{ secrets.MAVEN_USERNAME }}
+          MAVEN_PASSWORD: ${{ secrets.MAVEN_PASSWORD }}
