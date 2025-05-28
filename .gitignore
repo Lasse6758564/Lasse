@@ -1,49 +1,172 @@
-opsucht-permission/
-├── api/               # enthält nur die Interfaces (z. B. PermissionProvider)
-│   └── pom.xml
-├── bukkit/            # Bukkit-Implementierung (für z. B. LuckPerms, PEX, GM)
-│   └── pom.xml
-├── pom.xml            # Parent POM
-<dependencies>
-    <dependency>
-        <groupId>org.jetbrains</groupId>
-        <artifactId>annotations</artifactId>
-        <version>23.0.0</version>
-    </dependency>
-</dependencies>
-public class LuckPermsProvider implements PermissionProvider {
+// Datei: pom.xml (Parent und Single-Modul in einem, alternativ aufsplitten)
+<project xmlns="http://maven.apache.org/POM/4.0.0" 
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+    <groupId>net.opsucht</groupId>
+    <artifactId>permission</artifactId>
+    <version>1.0-SNAPSHOT</version>
+    <name>Opsucht Permission</name>
+
+    <dependencies>
+        <dependency>
+            <groupId>org.jetbrains</groupId>
+            <artifactId>annotations</artifactId>
+            <version>23.0.0</version>
+        </dependency>
+        <!-- LuckPerms API -->
+        <dependency>
+            <groupId>net.luckperms</groupId>
+            <artifactId>api</artifactId>
+            <version>5.4</version>
+            <scope>provided</scope>
+        </dependency>
+        <!-- Bukkit API -->
+        <dependency>
+            <groupId>org.bukkit</groupId>
+            <artifactId>bukkit</artifactId>
+            <version>1.19.4-R0.1-SNAPSHOT</version>
+            <scope>provided</scope>
+        </dependency>
+    </dependencies>
+</project>
+
+// Datei: src/main/java/net/opsucht/permission/api/PermissionProvider.java
+package net.opsucht.permission.api;
+
+import org.jetbrains.annotations.NotNull;
+import java.util.Set;
+import java.util.UUID;
+
+public interface PermissionProvider {
+    @NotNull String getProviderName();
+    boolean has(@NotNull UUID uuid, @NotNull String permission);
+    void add(@NotNull UUID uuid, @NotNull String permission);
+    void remove(@NotNull UUID uuid, @NotNull String permission);
+    @NotNull Set<String> getGroups(@NotNull UUID uuid);
+    @NotNull Set<String> getGroups();
+}
+
+// Datei: src/main/java/net/opsucht/permission/api/Permission.java
+package net.opsucht.permission.api;
+
+import org.jetbrains.annotations.ApiStatus;
+import org.jetbrains.annotations.NotNull;
+import org.jetbrains.annotations.Nullable;
+
+public final class Permission {
+    private static @Nullable PermissionProvider instance = null;
+
+    @ApiStatus.Internal
+    private Permission() {
+        throw new UnsupportedOperationException();
+    }
+
+    public static @NotNull PermissionProvider get() {
+        if (instance == null) {
+            throw new IllegalStateException("Permission has not been initialized");
+        }
+        return instance;
+    }
+
+    public static boolean isInitialized() {
+        return instance != null;
+    }
+
+    public static void set(PermissionProvider instance) {
+        Permission.instance = instance;
+    }
+}
+
+// Datei: src/main/java/net/opsucht/permission/bukkit/LuckPermsPermissionProvider.java
+package net.opsucht.permission.bukkit;
+
+import net.luckperms.api.LuckPerms;
+import net.luckperms.api.model.user.User;
+import net.luckperms.api.node.types.PermissionNode;
+import net.opsucht.permission.api.PermissionProvider;
+import org.bukkit.Bukkit;
+import org.bukkit.entity.Player;
+import org.jetbrains.annotations.NotNull;
+
+import java.util.*;
+import java.util.stream.Collectors;
+
+public class LuckPermsPermissionProvider implements PermissionProvider {
+
+    private final LuckPerms luckPerms;
+
+    public LuckPermsPermissionProvider(LuckPerms luckPerms) {
+        this.luckPerms = luckPerms;
+    }
+
     @Override
     public @NotNull String getProviderName() {
         return "LuckPerms";
     }
 
-    // Implementiere alle Methoden mit LuckPerms API Calls
+    @Override
+    public boolean has(@NotNull UUID uuid, @NotNull String permission) {
+        User user = luckPerms.getUserManager().getUser(uuid);
+        return user != null && user.getCachedData().getPermissionData().checkPermission(permission).asBoolean();
+    }
+
+    @Override
+    public void add(@NotNull UUID uuid, @NotNull String permission) {
+        User user = luckPerms.getUserManager().getUser(uuid);
+        if (user != null) {
+            user.data().add(PermissionNode.builder(permission).build());
+            luckPerms.getUserManager().saveUser(user);
+        }
+    }
+
+    @Override
+    public void remove(@NotNull UUID uuid, @NotNull String permission) {
+        User user = luckPerms.getUserManager().getUser(uuid);
+        if (user != null) {
+            user.data().remove(PermissionNode.builder(permission).build());
+            luckPerms.getUserManager().saveUser(user);
+        }
+    }
+
+    @Override
+    public @NotNull Set<String> getGroups(@NotNull UUID uuid) {
+        User user = luckPerms.getUserManager().getUser(uuid);
+        if (user == null) return Collections.emptySet();
+        return user.getInheritedGroups(user.getQueryOptions())
+                .stream()
+                .map(g -> g.getName())
+                .collect(Collectors.toSet());
+    }
+
+    @Override
+    public @NotNull Set<String> getGroups() {
+        return luckPerms.getGroupManager().getLoadedGroups()
+                .stream()
+                .map(g -> g.getName())
+                .collect(Collectors.toSet());
+    }
 }
-<modules>
-    <module>api</module>
-    <module>bukkit</module>
-</modules>
-feat(api): add PermissionProvider interface
-chore: setup multi-module Maven project
-name: Deploy API to Maven
 
-on:
-  push:
-    branches: [ main ]
+// Datei: src/main/java/net/opsucht/permission/bukkit/PermissionPlugin.java
+package net.opsucht.permission.bukkit;
 
-jobs:
-  deploy:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v3
-      - name: Set up Java
-        uses: actions/setup-java@v3
-        with:
-          distribution: 'temurin'
-          java-version: '17'
-      - name: Build & Deploy
-        run: mvn clean deploy --settings .github/settings.xml
-        env:
-          GPG_KEY: ${{ secrets.GPG_KEY }}
-          MAVEN_USERNAME: ${{ secrets.MAVEN_USERNAME }}
-          MAVEN_PASSWORD: ${{ secrets.MAVEN_PASSWORD }}
+import net.luckperms.api.LuckPerms;
+import net.luckperms.api.LuckPermsProvider;
+import net.opsucht.permission.api.Permission;
+import org.bukkit.plugin.java.JavaPlugin;
+
+public class PermissionPlugin extends JavaPlugin {
+
+    @Override
+    public void onEnable() {
+        LuckPerms luckPerms = LuckPermsProvider.get();
+        Permission.set(new LuckPermsPermissionProvider(luckPerms));
+        getLogger().info("Permission system initialized with LuckPerms.");
+    }
+
+    @Override
+    public void onDisable() {
+        // Optional: Cleanup
+    }
+}
